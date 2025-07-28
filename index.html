@@ -1,153 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
- <meta charset="UTF-8">
- <title>RAYCOIN Wallet</title>
- <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <style>
-   body { font-family: sans-serif; padding: 20px; background: #111; color: #0f0; }
-   input, button, textarea { margin: 5px 0; width: 100%; font-size: 1rem; }
-   .section { border: 1px solid #0f0; padding: 10px; margin: 10px 0; }
-   h2 { border-bottom: 1px solid #0f0; }
- </style>
+  <meta charset="UTF-8">
+  <title>RAYCOIN Wallet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f8f8f8; }
+    h2 { margin-top: 30px; }
+    input, button, textarea { margin: 5px 0; width: 100%; padding: 8px; }
+    #graph, canvas { width: 100%; height: 300px; border: 1px solid #ccc; }
+    pre { background: #eee; padding: 10px; overflow-x: auto; }
+    #walletInfo, #blockchain { word-break: break-word; }
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
 
- <h1>💰 RAYCOIN Wallet</h1>
+<h1>🪙 RAYCOIN Wallet</h1>
 
- <div class="section">
-   <h2>Your Wallet</h2>
-   <p><strong>Address:</strong></p>
-   <textarea id="address" readonly></textarea>
-   <p><strong>Private Key:</strong></p>
-   <textarea id="privKey" readonly></textarea>
-   <button onclick="createWallet()">🔐 Generate New Wallet</button>
- </div>
+<h2>Generate Wallet</h2>
+<button onclick="generateWallet()">🔐 Create Wallet</button>
+<div id="walletInfo"></div>
 
- <div class="section">
-   <h2>Balance</h2>
-   <p id="balance">Loading...</p>
- </div>
+<h2>Balance</h2>
+<div id="balance">Loading...</div>
 
- <div class="section">
-   <h2>Send RAYCOIN</h2>
-   <input type="text" id="to" placeholder="Recipient address">
-   <input type="number" id="amount" placeholder="Amount to send">
-   <button onclick="sendTx()">🚀 Send</button>
- </div>
+<h2>Blockchain</h2>
+<button onclick="mineBlock()">⛏️ Mine Block</button>
+<div id="blockchain"></div>
 
- <div class="section">
-   <h2>Mine Block</h2>
-   <button onclick="mineBlock()">⛏️ Mine</button>
-   <p id="mineStatus"></p>
- </div>
+<h2>Trust Graph</h2>
+<canvas id="trustCanvas"></canvas>
+<button onclick="addTrust()">➕ Add Trust</button>
+<input id="trustTarget" placeholder="Target Wallet ID">
+<input id="trustScore" type="number" min="0" max="100" placeholder="Score (0–100)">
 
- <div class="section">
-   <h2>Blockchain</h2>
-   <pre id="chainView"></pre>
- </div>
+<h2>Invite & Share</h2>
+<button onclick="generateInvite()">🔗 Generate Invite</button>
+<textarea id="inviteCode" readonly></textarea>
+<button onclick="importInvite()">📥 Import Invite</button>
+<input id="inviteInput" placeholder="Paste Invite Code">
 
-<!-- === wallet.js === -->
+<h2>Governance</h2>
+<button onclick="toggleGovernance()">🏛️ Enable Voting</button>
+<div id="governancePanel" class="hidden">
+  <p>Proposal: Upgrade mining speed</p>
+  <button onclick="vote('yes')">👍 Vote Yes</button>
+  <button onclick="vote('no')">👎 Vote No</button>
+  <div id="voteResult"></div>
+</div>
+
+<h2>Export Wallet</h2>
+<button onclick="exportWallet()">📤 Export</button>
+<pre id="exportData"></pre>
+
 <script>
-function generateKeyPair() {
-  return {
-    address: 'RAY_' + Math.random().toString(36).substr(2),
-    privateKey: Math.random().toString(36).substr(2)
-  };
-}
-function createWallet() {
-  const keys = generateKeyPair();
-  localStorage.setItem('ray_wallet', JSON.stringify(keys));
-  document.getElementById('address').value = keys.address;
-  document.getElementById('privKey').value = keys.privateKey;
-  updateBalance();
-}
-function loadWallet() {
-  const stored = localStorage.getItem('ray_wallet');
-  if (stored) {
-    const { address, privateKey } = JSON.parse(stored);
-    document.getElementById('address').value = address;
-    document.getElementById('privKey').value = privateKey;
+  let wallet = null;
+  let blockchain = [];
+  let trustMap = {};
+  let governanceEnabled = false;
+
+  function generateWallet() {
+    wallet = 'wallet_' + Math.random().toString(36).slice(2);
+    trustMap[wallet] = {};
+    document.getElementById('walletInfo').textContent = 'Wallet ID: ' + wallet;
+    document.getElementById('balance').textContent = 'Balance: 0';
+    renderTrustGraph();
   }
-}
-</script>
 
-<!-- === blockchain.js === -->
-<script>
-let chain = JSON.parse(localStorage.getItem('ray_chain')) || [];
+  function mineBlock() {
+    if (!wallet) return alert('Generate a wallet first');
+    blockchain.push({ miner: wallet, time: Date.now() });
+    document.getElementById('balance').textContent = 'Balance: ' + blockchain.filter(b => b.miner === wallet).length;
+    document.getElementById('blockchain').textContent = JSON.stringify(blockchain, null, 2);
+  }
 
-function getBalance(addr) {
-  return chain.reduce((sum, block) => {
-    block.transactions.forEach(tx => {
-      if (tx.to === addr) sum += tx.amount;
-      if (tx.from === addr) sum -= tx.amount;
-    });
-    return sum;
-  }, 0);
-}
+  function addTrust() {
+    const target = document.getElementById('trustTarget').value.trim();
+    const score = parseInt(document.getElementById('trustScore').value, 10);
+    if (!target || isNaN(score)) return alert('Invalid input');
+    trustMap[wallet][target] = score;
+    renderTrustGraph();
+  }
 
-function sendTx() {
-  const from = document.getElementById('address').value;
-  const to = document.getElementById('to').value;
-  const amount = parseFloat(document.getElementById('amount').value);
-  if (!from || !to || isNaN(amount)) return;
+  function renderTrustGraph() {
+    const canvas = document.getElementById('trustCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!wallet) return;
 
-  const block = {
-    timestamp: Date.now(),
-    transactions: [{ from, to, amount }],
-    hash: Math.random().toString(36).substr(2)
-  };
-  chain.push(block);
-  saveChain();
-  updateBalance();
-  renderChain();
-}
+    ctx.fillText('Trust relationships for: ' + wallet, 10, 20);
+    let y = 40;
+    for (let target in trustMap[wallet]) {
+      ctx.fillText(`${target}: ${trustMap[wallet][target]}`, 10, y);
+      y += 20;
+    }
+  }
 
-function mineBlock() {
-  const addr = document.getElementById('address').value;
-  const block = {
-    timestamp: Date.now(),
-    transactions: [{ from: 'system', to: addr, amount: 50 }],
-    hash: Math.random().toString(36).substr(2)
-  };
-  chain.push(block);
-  saveChain();
-  document.getElementById('mineStatus').textContent = 'Block mined!';
-  updateBalance();
-  renderChain();
-}
+  function generateInvite() {
+    const data = btoa(JSON.stringify({ from: wallet, trust: trustMap[wallet], time: Date.now() }));
+    document.getElementById('inviteCode').value = data;
+  }
 
-function saveChain() {
-  localStorage.setItem('ray_chain', JSON.stringify(chain));
-}
-</script>
+  function importInvite() {
+    const raw = document.getElementById('inviteInput').value.trim();
+    try {
+      const decoded = JSON.parse(atob(raw));
+      trustMap[wallet][decoded.from] = 50; // Default trust
+      renderTrustGraph();
+      alert('Invite accepted and trust added');
+    } catch (e) {
+      alert('Invalid invite');
+    }
+  }
 
-<!-- === storage.js === -->
-<script>
-function updateBalance() {
-  const addr = document.getElementById('address').value;
-  if (!addr) return;
-  const balance = getBalance(addr);
-  document.getElementById('balance').textContent = balance + ' RAY';
-}
-</script>
+  function toggleGovernance() {
+    governanceEnabled = !governanceEnabled;
+    document.getElementById('governancePanel').classList.toggle('hidden', !governanceEnabled);
+  }
 
-<!-- === ui.js === -->
-<script>
-function renderChain() {
-  let html = '';
-  chain.forEach((block, i) => {
-    html += `Block ${i} [${new Date(block.timestamp).toLocaleString()}]\n`;
-    block.transactions.forEach(tx => {
-      html += `  ${tx.from} ➡️ ${tx.to} : ${tx.amount}\n`;
-    });
-    html += `  Hash: ${block.hash}\n\n`;
-  });
-  document.getElementById('chainView').textContent = html;
-}
-loadWallet();
-updateBalance();
-renderChain();
+  function vote(choice) {
+    document.getElementById('voteResult').textContent = 'You voted: ' + choice.toUpperCase() + ' (Weight: ' + trustScore(wallet) + ')';
+  }
+
+  function trustScore(id) {
+    if (!trustMap[id]) return 0;
+    let total = 0;
+    for (let score of Object.values(trustMap[id])) total += score;
+    return total;
+  }
+
+  function exportWallet() {
+    const blob = {
+      wallet, blockchain, trustMap, governanceEnabled
+    };
+    document.getElementById('exportData').textContent = JSON.stringify(blob, null, 2);
+  }
 </script>
 
 </body>
